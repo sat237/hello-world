@@ -1,0 +1,73 @@
+    Declare @FromDate Datetime 
+    Declare @ToDate Datetime 
+    set @FromDate = 
+        (Select min(S0.Docdate) from OINM S0 where S0.Docdate >='[%0]') 
+    set @ToDate = 
+        (Select max(S1.Docdate) from OINM S1 where S1.Docdate <='[%1]')
+    select * from 
+    (
+        SELECT T0.itemcode, 
+        min(T0.Dscription) as 'Item Description', 
+        min(B1.ItmsGrpNam) as 'Item Group', W1.Whscode, C1.Location, 
+        (isnull((
+            Select sum(isnull(inqty,0)) 
+            from OINM O1 
+            where O1.itemcode=T1.itemcode 
+            and O1.Warehouse=W1.Whscode 
+            and O1.docdate<@FromDate ),0)- 
+        isnull((
+            Select sum(isnull(outqty,0)) 
+            from OINM O1 
+            where O1.itemcode=T1.itemcode 
+            and O1.Warehouse=W1.Whscode 
+            and O1.docdate<@FromDate),0)
+        ) as [Opening Stock],
+        isnull((
+            Select sum(isnull(inqty,0)) 
+            from OINM O1 
+            where O1.itemcode=T1.itemcode 
+            and O1.Warehouse=W1.Whscode 
+            and O1.docdate>=@FromDate 
+            and O1.docdate<=@ToDate and O1.inqty>0 
+            and O1.transtype in (20,18)),0
+        ) as [Purchase Quantity], 
+        isnull((
+            Select sum(isnull(outqty,0)) 
+            from OINM O1 
+            where O1.itemcode=T1.itemcode and O1.Warehouse=W1.Whscode 
+            and O1.docdate>=@FromDate and O1.docdate<=@ToDate 
+            and O1.outqty>0 and O1.transtype in (21,19)),0
+        ) as [Purchase Return Quantity], 
+       isnull((
+            Select sum(isnull(outqty,0)) 
+            from OINM O1 
+            where O1.itemcode=T1.itemcode and O1.Warehouse=W1.Whscode 
+            and O1.docdate>=@FromDate and O1.docdate<=@ToDate and O1.outqty>0 
+            and O1.transtype in (13,15)),0
+        ) as [sale Quatity], 
+        (isnull
+            ((
+            Select sum(isnull(inqty,0)) 
+            from OINM O1 
+            where O1.itemcode=T1.itemcode and O1.Warehouse=W1.Whscode 
+            and O1.docdate<=@ToDate),0
+            )- 
+            isnull((
+                Select sum(isnull(outqty,0)) 
+                from OINM O1 
+                where O1.itemcode=T1.itemcode and O1.Warehouse=W1.Whscode 
+                and O1.docdate<=@ToDate),0)
+        ) as [Closing Stock]
+        FROM OINM T0 
+        INNER JOIN OITM T1 ON T0.ItemCode = T1.ItemCode 
+        INNER JOIN OITW T2 ON T1.ItemCode = T2.ItemCode 
+        INNER JOIN OITB B1 ON T1.ItmsGrpCod=B1.ItmsGrpCod 
+        INNER JOIN OWHS W1 ON T2.WhsCode = W1.WhsCode 
+        INNER JOIN OLCT C1 ON W1.Location=C1.Code 
+        Group by T1.itemcode, T0.Itemcode, W1.WhsCode, C1.Location
+    ) a 
+    where (a.[Opening Stock]
+            +a.[Purchase Quantity]
+            + a.[Purchase Return Quantity]
+            +a.[sale Quatity]+a.[Closing Stock]
+           ) !=0
